@@ -1,4 +1,4 @@
-function wavesurr3(X)
+function B = wavesurr3(X)
 % WAVESURR3 Surrogate data for a two-dimensional time series via the wavelet transform
 
 arguments
@@ -10,28 +10,36 @@ if mod(size(X, 2), 2); X = X(:, 1:end-1, :); end
 if mod(size(X, 2), 2); X = X(:, :, 1:end-1); end
 mu = mean(X, 'all', 'omitnan');
 sigma = std(X, 0, 'all', 'omitnan');
-X = X - mu;
 nanidxs = isnan(X);
-X(nanidxs) = 0; % ! Will have to check the validity of this. Should be fine, since wavelet method won't 'mix in the edge' like the Fourier approach, since it is designed from non-stationarity. At least for the small wavelets; might be a problem for the very largest wavelets though, but those are spatially filtered anyway...
+X(nanidxs) = 0;
 
-% 1. generate a Gaussian white noise time series to match the original data length
-X_ = randn(size(X));
 
-% 2. derive the wavelet transform of this noise to extract the phase φ(t,f)
-[a_,d_] = dualtree3(X_);
+% Center and normalize the reference image A.
+A = (X - mu)./sigma;
 
-% 3. combine this randomised phase and the WT modulus of the original signal to obtain a surrogate time-frequency distribution
-[a, d] = dualtree3(X); % Leave the a's untouched
-d = arrayfun(@(x) abs(d{x}).*exp(angle(d_{x})*1i), 1:length(d_), 'un', 0);
+% Generate a normal white noise B of mean 0 and variance 1 of the same size as A;
+B = randn(size(A));
+B(nanidxs) = 0; % OK?
 
-% 4. a nonstationary surrogate time series x^(t) is reconstructed by taking the real part of the inverse wavelet transform of Wx^(t,f)
-X_ = idualtree3(a, d);
-X_ = sigma.*X_./std(X_, 0, 'all', 'omitnan');
+% Use the DT-CWT with symmetric extension (we choose half-point) to generate the multi-scale and multi-orientation decompositions of both A and B. We chose the (13,19)-tap near-orthogonal filters at scale 1 and the 14-tap Q-Shift filters at scales ≥2 because it is a good compromise between computational complexity and aliasing energy [50].
+[a_a,d_a] = dualtree3(A, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+[a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+i = 1;
+fprintf("Iteration %d: loss = %f\n", i, matchcriterion(d_a, d_b))
+loss = Inf;
+loss_i = matchcriterion(d_a, d_b);
+while loss_i < loss
+    loss = loss_i;
+    [a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+    % Scale the magnitude of the detail coefficients of each subband of B
+    d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0);
 
-% 5. rescale the surrogate x^(t) to the distribution of the original time series by sorting the data (after a wavelet filtering in the frequency band of interest) according to the ranking of values of the wavelet-based surrogate11,
-% ! Won't do this for now, since sorting data over multiple dimensions is not clear.
-
-X_ = X_ + mu;
-X_(nanidxs) = NaN
-
+    % Transform the scaled coefficients of B back into the spatial domain.
+    B = idualtree3(a_b, d_b, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+    i = i + 1;
+    [a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+    loss_i = matchcriterion(d_a, d_b);
+    fprintf("Iteration %d: loss = %f\n", i, loss_i)
 end
+end
+    
