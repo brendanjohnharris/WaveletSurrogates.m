@@ -4,6 +4,7 @@ function B = wavesurr3(X, options)
 
 arguments
     X (:,:,:) {mustBeNumeric}
+    options.tol (1, 1) {mustBeNumeric} = 0.001
     options.maxiter (1, 1) {mustBeNumeric} = 100
 end
 
@@ -30,7 +31,7 @@ i = 1;
 fprintf("Iteration %d: loss = %f\n", i, matchcriterion(d_a, d_b))
 loss = Inf;
 loss_i = matchcriterion(d_a, d_b);
-while loss_i < loss && i < options.maxiter
+while loss_i < loss && i < options.maxiter && loss_i > options.tol
     loss = loss_i;
     % Scale the magnitude of the detail coefficients of each subband of B
     d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0);
