@@ -1,8 +1,10 @@
-function B = wavesurr3(X)
+function B = wavesurr3(X, options)
 % WAVESURR3 Surrogate data for a two-dimensional time series via the wavelet transform
+% https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0048766#s4
 
 arguments
     X (:,:,:) {mustBeNumeric}
+    options.maxiter (1, 1) {mustBeNumeric} = 100
 end
 
 if mod(size(X, 1), 2); X = X(1:end-1, :, :); end
@@ -28,12 +30,10 @@ i = 1;
 fprintf("Iteration %d: loss = %f\n", i, matchcriterion(d_a, d_b))
 loss = Inf;
 loss_i = matchcriterion(d_a, d_b);
-while loss_i < loss
+while loss_i < loss && i < options.maxiter
     loss = loss_i;
-    [a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
     % Scale the magnitude of the detail coefficients of each subband of B
     d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0);
-
     % Transform the scaled coefficients of B back into the spatial domain.
     B = idualtree3(a_b, d_b, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
     i = i + 1;
@@ -41,5 +41,7 @@ while loss_i < loss
     loss_i = matchcriterion(d_a, d_b);
     fprintf("Iteration %d: loss = %f\n", i, loss_i)
 end
+B(nanidxs) = NaN;
+B = B.*sigma + mu;
 end
     
