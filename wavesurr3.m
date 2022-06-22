@@ -4,7 +4,7 @@ function B = wavesurr3(X, options)
 
 arguments
     X (:,:,:) {mustBeNumeric}
-    options.tol (1, 1) {mustBeNumeric} = 0.001
+    options.tol (1, 1) {mustBeNumeric} = 1e-3
     options.maxiter (1, 1) {mustBeNumeric} = 100
 end
 
@@ -19,28 +19,38 @@ X(nanidxs) = 0;
 
 % Center and normalize the reference image A.
 A = (X - mu)./sigma;
+E = sum(abs(A).^2, 'all'); % The total energy of the signal. Used to nromalize the loss. Assumes equal energy contribution over spatial and temporal dimensions.
 
 % Generate a normal white noise B of mean 0 and variance 1 of the same size as A;
 B = randn(size(A));
 B(nanidxs) = 0; % OK?
 
 % Use the DT-CWT with symmetric extension (we choose half-point) to generate the multi-scale and multi-orientation decompositions of both A and B. We chose the (13,19)-tap near-orthogonal filters at scale 1 and the 14-tap Q-Shift filters at scales ≥2 because it is a good compromise between computational complexity and aliasing energy [50].
-[a_a,d_a] = dualtree3(A, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
-[a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+forward = @(x) dualtree3(x, 'FilterLength', 18, 'LevelOneFilter', 'nearsym13_19');
+inverse = @(x, y) idualtree3(x, y, 'FilterLength', 18, 'LevelOneFilter', 'nearsym13_19');
+
+[a_a,d_a] = forward(A);
+[a_b,d_b] = forward(B);
 i = 1;
-fprintf("Iteration %d: loss = %f\n", i, matchcriterion(d_a, d_b))
 loss = Inf;
-loss_i = matchcriterion(d_a, d_b);
-while loss_i < loss && i < options.maxiter && loss_i > options.tol
-    loss = loss_i;
+loss_i = matchcriterion(d_a, d_b)./E;
+loss_a = approxcriterion(a_a, a_b)./E;
+fprintf("Iteration %d: approx. loss = %.3d, detail loss = %.3d\n", i-1, loss_a, loss_i)
+while i < options.maxiter && (loss_i > options.tol || loss_a > options.tol)
+    loss(end+1) = loss_i;
+
     % Scale the magnitude of the detail coefficients of each subband of B
-    d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0);
+    d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0); % Match detail
+    a_b = matchapprox(a_a, a_b); % Match approximation
+
     % Transform the scaled coefficients of B back into the spatial domain.
-    B = idualtree3(a_b, d_b, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
+    B = inverse(a_b, d_b);
+    [a_b,d_b] = forward(B);
+    loss_i = matchcriterion(d_a, d_b)./E;
+    loss_a = approxcriterion(a_a, a_b)./E;
+
+    fprintf("Iteration %d: approx. loss = %.3d, detail loss = %.3d\n", i, loss_a, loss_i)
     i = i + 1;
-    [a_b,d_b] = dualtree3(B, 'FilterLength', 14, 'LevelOneFilter', 'nearsym13_19');
-    loss_i = matchcriterion(d_a, d_b);
-    fprintf("Iteration %d: loss = %f\n", i, loss_i)
 end
 B(nanidxs) = NaN;
 B = B.*sigma + mu;
