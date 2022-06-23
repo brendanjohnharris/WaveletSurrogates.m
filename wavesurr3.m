@@ -1,6 +1,7 @@
 function B = wavesurr3(X, options)
 % WAVESURR3 Surrogate data for a two-dimensional time series via the wavelet transform
 % https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0048766#s4
+% https://journals.aps.org/pre/pdf/10.1103/PhysRevE.95.032123
 
 arguments
     X (:,:,:) {mustBeNumeric}
@@ -19,7 +20,7 @@ X(nanidxs) = 0;
 
 % Center and normalize the reference image A.
 A = (X - mu)./sigma;
-E = sum(abs(A).^2, 'all'); % The total energy of the signal. Used to nromalize the loss. Assumes equal energy contribution over spatial and temporal dimensions.
+E = sum(abs(A).^2, 'all'); % The total energy of the signal. Used to normalize the loss. Assumes equal energy contribution over spatial and temporal dimensions.
 
 % Generate a normal white noise B of mean 0 and variance 1 of the same size as A;
 B = randn(size(A));
@@ -29,22 +30,23 @@ B(nanidxs) = 0; % OK?
 forward = @(x) dualtree3(x, 'FilterLength', 18, 'LevelOneFilter', 'nearsym13_19');
 inverse = @(x, y) idualtree3(x, y, 'FilterLength', 18, 'LevelOneFilter', 'nearsym13_19');
 
-[a_a,d_a] = forward(A);
-[a_b,d_b] = forward(B);
+[a_a, d_a] = forward(A);
+[a_b, d_b] = forward(B);
 i = 1;
 loss = Inf;
 loss_i = matchcriterion(d_a, d_b)./E;
 loss_a = approxcriterion(a_a, a_b)./E;
 fprintf("Iteration %d: approx. loss = %.3d, detail loss = %.3d\n", i-1, loss_a, loss_i)
-while i < options.maxiter && (loss_i > options.tol || loss_a > options.tol)
+while i < options.maxiter && (loss_i > options.tol) % || loss_a > options.tol)
     loss(end+1) = loss_i;
 
     % Scale the magnitude of the detail coefficients of each subband of B
-    d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0); % Match detail
-    a_b = matchapprox(a_a, a_b); % Match approximation
+    % d_b = arrayfun(@(i) matchscale(d_a{i}, d_b{i}), 1:length(d_a), 'un', 0); % Match detail
+    % % a_b = matchapprox(a_a, a_b); % Match approximation
+    d_b = arrayfun(@(i) abs(d_a{i}).*exp(angle(d_b{i})*1i), 1:length(d_a), 'un', 0);
 
     % Transform the scaled coefficients of B back into the spatial domain.
-    B = inverse(a_b, d_b);
+    B = inverse(a_a, d_b);
     [a_b,d_b] = forward(B);
     loss_i = matchcriterion(d_a, d_b)./E;
     loss_a = approxcriterion(a_a, a_b)./E;
